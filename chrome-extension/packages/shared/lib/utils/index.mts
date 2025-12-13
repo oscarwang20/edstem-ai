@@ -1,4 +1,4 @@
-import { StrictMode, type ReactNode } from 'react';
+import { StrictMode, type ReactNode, createElement } from 'react';
 import { createRoot } from 'react-dom/client';
 
 export type ManifestType = chrome.runtime.ManifestV3;
@@ -44,7 +44,7 @@ export function initAppWithShadow({ id, app, inlineCss }: InitAppOptions): void 
 
   // Create React root and render
   const root = createRoot(rootElement);
-  root.render(<StrictMode>{app}</StrictMode>);
+  root.render(createElement(StrictMode, null, app));
 
   console.log(`[${id}] Initialized with Shadow DOM`);
 }
@@ -60,7 +60,7 @@ export function initApp({ id, app }: Omit<InitAppOptions, 'inlineCss'>): void {
   }
 
   const root = createRoot(rootElement);
-  root.render(<StrictMode>{app}</StrictMode>);
+  root.render(createElement(StrictMode, null, app));
 
   console.log(`[${id}] Initialized`);
 }
