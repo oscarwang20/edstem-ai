@@ -1,0 +1,11 @@
+/* EdStem Smart Search - Content Script Styles */
+
+/* These styles are injected into the EdStem page and should be minimal
+   to avoid conflicts with EdStem's styles. Most styling is handled
+   in the Shadow DOM via Tailwind CSS. */
+
+/* Container for the smart search results */
+#edstem-smart-search {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  z-index: 9999;
+}

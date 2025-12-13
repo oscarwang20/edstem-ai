@@ -1,31 +1,53 @@
 {
   "extensionDescription": {
     "description": "Extension description",
-    "message": "Chrome extension boilerplate developed with Vite, React and Typescript"
+    "message": "Augment EdStem search with semantic AI-powered results to find relevant discussion threads faster"
   },
   "extensionName": {
     "description": "Extension name",
-    "message": "Chrome extension boilerplate"
+    "message": "EdStem Smart Search"
   },
   "toggleTheme": {
     "message": "Toggle theme"
   },
-  "injectButton": {
-    "message": "Click to inject Content Scripts"
+  "syncCourse": {
+    "message": "Sync Current Course"
   },
-  "greeting": {
-    "description": "Greeting message",
-    "message": "Hello, My name is $NAME$",
-    "placeholders": {
-      "name": {
-        "content": "$1",
-        "example": "John Doe"
-      }
-    }
+  "syncing": {
+    "message": "Syncing..."
   },
-  "hello": {
-    "description": "Placeholder example",
-    "message": "Hello $1"
+  "syncComplete": {
+    "message": "Sync Complete"
+  },
+  "syncError": {
+    "message": "Sync Failed"
+  },
+  "backendConnected": {
+    "message": "Backend Connected"
+  },
+  "backendDisconnected": {
+    "message": "Backend Disconnected"
+  },
+  "smartMatches": {
+    "message": "Smart Matches (AI)"
+  },
+  "keywordMatches": {
+    "message": "Keyword Matches"
+  },
+  "searchingDeeper": {
+    "message": "Searching deeper..."
+  },
+  "noSmartResults": {
+    "message": "No semantic matches found"
+  },
+  "courseNotIndexed": {
+    "message": "Course not indexed. Click 'Sync Current Course' to enable smart search."
+  },
+  "currentCourse": {
+    "message": "Current Course"
+  },
+  "indexedThreads": {
+    "message": "Indexed Threads"
   },
   "displayErrorInfo": {
     "message": "Error occur"
