@@ -22,7 +22,17 @@ export const withPageConfig = (config: UserConfig) =>
           'process.env': env,
         },
         base: '',
-        plugins: [react(), IS_DEV && watchRebuildPlugin({ refresh: true }), nodePolyfills()],
+        plugins: [
+          react(),
+          IS_DEV && watchRebuildPlugin({ refresh: true }),
+          nodePolyfills({
+            // Exclude process polyfill to avoid conflicts with React 19
+            exclude: ['process'],
+            globals: {
+              process: false,
+            },
+          }),
+        ],
         build: {
           sourcemap: IS_DEV,
           minify: IS_PROD,
