@@ -1,0 +1,110 @@
+/* Container now lives inside the purple header */
+#edsmart-search-container {
+  margin-left: 8px;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+  border-radius: 0;
+  color: #ffffff;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  display: inline-block;
+  vertical-align: middle;
+}
+
+#edsmart-search-title {
+  font-size: 12px;
+  margin: 0 0 4px;
+  font-weight: 600;
+  color: #e5e7eb;
+}
+
+/* Make the bar itself pill shaped */
+#edsmart-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.85);
+}
+
+#edsmart-input {
+  flex: 1;
+  min-width: 220px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: none;
+  background: transparent;
+  color: #e5e7eb;
+  font-size: 13px;
+  outline: none;
+}
+
+#edsmart-input::placeholder {
+  color: #9ca3af;
+}
+
+#edsmart-button {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: none;
+  background: #ffffff;
+  color: #111827;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+#edsmart-button:hover {
+  background: #e5e7eb;
+}
+
+#edsmart-results {
+  margin-top: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: #0f172a;
+  border-radius: 8px;
+  padding: 4px;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.6);
+}
+
+.edsmart-result {
+  padding: 6px 4px;
+  border-bottom: 1px solid #1f2937;
+}
+
+.edsmart-result {
+  cursor: pointer;
+}
+
+.edsmart-result:hover {
+  background: rgba(15, 23, 42, 0.6);
+}
+
+.edsmart-result:last-child {
+  border-bottom: none;
+}
+
+.edsmart-title-link {
+  color: #93c5fd;
+  font-weight: 500;
+}
+
+.edsmart-snippet {
+  font-size: 12px;
+  color: #9ca3af;
+  margin-top: 2px;
+}
+
+.edsmart-sim {
+  font-size: 11px;
+  color: #6b7280;
+  margin-top: 2px;
+}
+
+@media (max-width: 880px) {
+  #edsmart-input {
+    min-width: 140px;
+  }
+}

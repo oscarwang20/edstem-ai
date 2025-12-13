@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "EdSmart Search",
+  "version": "1.0.0",
+  "description": "Adds an extra semantic search bar for Ed threads.",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://edstem.org/us/courses/*/discussion*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ]
+    }
+  ],
+  "permissions": [],
+  "host_permissions": [
+    "http://localhost:8000/*"
+  ]
+}
