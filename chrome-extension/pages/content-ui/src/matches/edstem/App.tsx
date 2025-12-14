@@ -251,7 +251,16 @@ export default function App() {
 
   // Find and mount to EdStem's search results container
   useEffect(() => {
-    if (!state.isVisible) return;
+    if (!state.isVisible) {
+      // When not visible, ensure root element is hidden or removed from search container
+      const rootElement = document.getElementById('edstem-smart-search');
+      if (rootElement && rootElement.parentElement && rootElement.parentElement !== document.body) {
+        // Move back to body to keep it out of the way
+        document.body.appendChild(rootElement);
+        mountedRef.current = false;
+      }
+      return;
+    }
 
     // Get the shadow DOM root element (created by initAppWithShadow)
     const rootElement = document.getElementById('edstem-smart-search');
@@ -260,129 +269,213 @@ export default function App() {
       return;
     }
 
-    const findAndMount = () => {
-      // Multiple selector strategies to find EdStem's search results container
-      const searchContainerSelectors = [
-        '[data-test-id="search-modal"]',
-        '[data-test-id="search-results"]',
-        '.search-overlay',
-        '[class*="SearchModal"]',
-        '[class*="search-modal"]',
-        '[class*="SearchOverlay"]',
-        '[role="dialog"]', // Search modals often use dialog role
-      ];
+    const findAndMount = (attempt = 0) => {
+      const maxAttempts = 10;
 
-      const resultsListSelectors = [
-        '[class*="results"]',
-        '[class*="Results"]',
-        'ul[role="listbox"]',
-        'ul[role="list"]',
-        '[class*="list"]',
-        '[class*="List"]',
-        'ul',
-        'ol',
-      ];
-
-      let searchContainer: Element | null = null;
-      let resultsList: Element | null = null;
-
-      // Try to find the search container
-      for (const selector of searchContainerSelectors) {
-        searchContainer = document.querySelector(selector);
-        if (searchContainer) {
-          console.log('[EdStem Smart Search] Found search container:', selector);
-          break;
-        }
+      if (attempt > 0) {
+        console.log(`[EdStem Smart Search] Mount attempt ${attempt}/${maxAttempts}`);
       }
 
-      // If no specific container found, look for any container with search-related content
-      if (!searchContainer) {
-        // Look for elements that might contain search results
-        const allContainers = document.querySelectorAll(
-          '[class*="search"], [class*="Search"], [id*="search"], [id*="Search"]',
-        );
-        for (const container of allContainers) {
-          // Check if it has list-like children (likely results)
-          if (container.querySelector('ul, ol, [role="listbox"], [role="list"]')) {
-            searchContainer = container;
-            console.log('[EdStem Smart Search] Found search container via fallback');
-            break;
-          }
-        }
-      }
+      // Based on example DOM structure, the correct position is:
+      // .dissch-threads-scroll > .dissch-summary > [our element] > .dissch-thread-group[role="feed"]
+      // This ensures our results appear below the search bar and above native results
+      const threadsScrollSelector = '.dissch-threads-scroll';
+      const summarySelector = '.dissch-summary';
+      const threadGroupSelector = '.dissch-thread-group[role="feed"]';
 
-      // Find the results list within the container
-      if (searchContainer) {
-        for (const selector of resultsListSelectors) {
-          resultsList = searchContainer.querySelector(selector);
-          if (resultsList) {
-            console.log('[EdStem Smart Search] Found results list:', selector);
-            break;
-          }
-        }
+      let targetParent: Element | null = null;
+      let insertBefore: Element | null = null;
 
-        // If no results list found, use the container itself or its first child
-        if (!resultsList) {
-          resultsList = searchContainer.firstElementChild || searchContainer;
-        }
-      }
+      // First, find the scroll container (.dissch-threads-scroll)
+      const threadsScroll = document.querySelector(threadsScrollSelector);
+      if (threadsScroll) {
+        targetParent = threadsScroll;
 
-      // Mount our shadow DOM root element (not the inner containerRef)
-      // The shadow DOM root is the element with id 'edstem-smart-search'
-      const rootElement = shadowRootRef.current || document.getElementById('edstem-smart-search');
+        // Priority: Insert after .dissch-summary, before .dissch-thread-group
+        const summary = threadsScroll.querySelector(summarySelector);
+        const threadGroup = threadsScroll.querySelector(threadGroupSelector);
 
-      if (searchContainer && rootElement && resultsList) {
-        const currentParent = rootElement.parentElement;
-        const targetParent = resultsList.parentElement || searchContainer;
-
-        // Only mount if not already in the right place
-        if (currentParent !== targetParent) {
-          // Remove from old location if exists
-          if (currentParent) {
-            currentParent.removeChild(rootElement);
-          }
-
-          // Insert before the results list (or as first child if no list)
-          if (resultsList.parentElement) {
-            resultsList.parentElement.insertBefore(rootElement, resultsList);
-            console.log('[EdStem Smart Search] Successfully mounted shadow root before results list');
-          } else {
-            searchContainer.insertBefore(rootElement, searchContainer.firstChild);
-            console.log('[EdStem Smart Search] Successfully mounted shadow root as first child');
-          }
-
-          mountedRef.current = true;
-          console.log('[EdStem Smart Search] Successfully mounted to DOM');
-        } else if (currentParent === targetParent) {
-          // Already mounted in the right place
-          mountedRef.current = true;
-          console.log('[EdStem Smart Search] Already mounted in correct location');
+        if (threadGroup) {
+          // Thread group exists - insert before it (and after summary if it exists)
+          insertBefore = threadGroup;
+          console.log('[EdStem Smart Search] Found threads scroll container with thread group');
+        } else if (summary) {
+          // Summary exists but no thread group yet - insert after summary
+          insertBefore = summary.nextElementSibling || threadsScroll.lastElementChild;
+          console.log('[EdStem Smart Search] Found threads scroll container with summary (no thread group yet)');
+        } else {
+          // Neither exists - insert as first child
+          insertBefore = threadsScroll.firstElementChild;
+          console.log('[EdStem Smart Search] Found threads scroll container (no summary or thread group)');
         }
       } else {
-        // If we can't find the right container, log for debugging
+        // Fallback: look for thread group directly and use its parent
+        const threadGroup = document.querySelector(threadGroupSelector);
+        if (threadGroup) {
+          targetParent = threadGroup.parentElement;
+          insertBefore = threadGroup;
+          console.log('[EdStem Smart Search] Found thread group via fallback');
+        } else {
+          // Last resort: look for .dissch-window
+          const window = document.querySelector('.dissch-window');
+          if (window) {
+            targetParent = window;
+            // Try to find .dissch-threads-scroll or .dissch-thread-group inside
+            const threadsScroll = window.querySelector(threadsScrollSelector);
+            const threadGroup = window.querySelector(threadGroupSelector);
+            if (threadsScroll) {
+              // If we find threads-scroll, we should actually mount there instead
+              targetParent = threadsScroll;
+              insertBefore = threadsScroll.querySelector(threadGroupSelector) || threadsScroll.firstElementChild;
+              console.log('[EdStem Smart Search] Found window, redirecting to threads-scroll');
+            } else if (threadGroup) {
+              insertBefore = threadGroup;
+              console.log('[EdStem Smart Search] Found window with thread group');
+            } else {
+              insertBefore = window.firstElementChild;
+              console.log('[EdStem Smart Search] Found window (fallback)');
+            }
+          }
+        }
+      }
+
+      // Get the shadow DOM root element
+      const rootElement = shadowRootRef.current || document.getElementById('edstem-smart-search');
+
+      if (rootElement && targetParent) {
+        // Ensure the root element is visible with inline styles
+        // This is critical because shadow DOM root elements might be hidden by default
+        rootElement.style.display = 'block';
+        rootElement.style.visibility = 'visible';
+        rootElement.style.position = 'relative';
+        rootElement.style.width = '100%';
+        rootElement.style.zIndex = '1';
+
+        const currentParent = rootElement.parentElement;
+
+        // Check if already in the correct position (after summary, before thread group)
+        let isInCorrectPosition = false;
+        if (currentParent === targetParent && targetParent.classList.contains('dissch-threads-scroll')) {
+          const summary = targetParent.querySelector(summarySelector);
+          const threadGroup = targetParent.querySelector(threadGroupSelector);
+          // Check if rootElement is between summary and thread group
+          if (summary && threadGroup) {
+            let foundSummary = false;
+            let foundOurElement = false;
+            for (const child of Array.from(targetParent.children)) {
+              if (child === summary) {
+                foundSummary = true;
+              } else if (child === rootElement && foundSummary) {
+                foundOurElement = true;
+              } else if (child === threadGroup && foundOurElement) {
+                isInCorrectPosition = true;
+                break;
+              } else if (child === threadGroup && !foundOurElement) {
+                // Thread group comes before our element - wrong position
+                break;
+              }
+            }
+          } else if (summary && !threadGroup) {
+            // Summary exists but thread group doesn't yet - check if we're after summary
+            let foundSummary = false;
+            for (const child of Array.from(targetParent.children)) {
+              if (child === summary) {
+                foundSummary = true;
+              } else if (child === rootElement && foundSummary) {
+                isInCorrectPosition = true;
+                break;
+              }
+            }
+          }
+        }
+
+        // Only mount if not already in the right place
+        if (currentParent !== targetParent || !isInCorrectPosition) {
+          // Remove from old location if exists
+          if (currentParent) {
+            try {
+              currentParent.removeChild(rootElement);
+            } catch (e) {
+              console.warn('[EdStem Smart Search] Error removing from old location:', e);
+            }
+          }
+
+          // Insert into the target parent
+          try {
+            if (insertBefore && insertBefore.parentElement === targetParent) {
+              targetParent.insertBefore(rootElement, insertBefore);
+              console.log('[EdStem Smart Search] Successfully mounted shadow root before target element');
+            } else {
+              // Insert as first child if we can't find the insert-before element
+              targetParent.insertBefore(rootElement, targetParent.firstChild);
+              console.log('[EdStem Smart Search] Successfully mounted shadow root as first child');
+            }
+
+            mountedRef.current = true;
+            console.log('[EdStem Smart Search] Successfully mounted to DOM', {
+              targetParent: targetParent.className,
+              rootElementStyles: {
+                display: rootElement.style.display,
+                visibility: rootElement.style.visibility,
+                position: rootElement.style.position,
+                width: rootElement.style.width,
+              },
+            });
+          } catch (e) {
+            console.error('[EdStem Smart Search] Error mounting to DOM:', e);
+            // Retry if there was an error
+            if (attempt < maxAttempts) {
+              setTimeout(() => findAndMount(attempt + 1), 200);
+            }
+          }
+        } else if (currentParent === targetParent) {
+          // Already mounted in the right place, but ensure styles are set
+          rootElement.style.display = 'block';
+          rootElement.style.visibility = 'visible';
+          rootElement.style.position = 'relative';
+          rootElement.style.width = '100%';
+          rootElement.style.zIndex = '1';
+          mountedRef.current = true;
+          console.log('[EdStem Smart Search] Already mounted in correct location, styles updated');
+        }
+      } else {
+        // If we can't find the right container, retry after a short delay
         if (!rootElement) {
           console.error('[EdStem Smart Search] Shadow DOM root element not found!');
-        } else if (!searchContainer) {
-          console.warn('[EdStem Smart Search] Could not find search container');
-        } else if (!resultsList) {
-          console.warn('[EdStem Smart Search] Could not find results list');
+        } else if (!targetParent) {
+          if (attempt < maxAttempts) {
+            console.log(
+              `[EdStem Smart Search] Target container not found, retrying in 200ms... (attempt ${attempt + 1})`,
+            );
+            setTimeout(() => findAndMount(attempt + 1), 200);
+          } else {
+            console.warn('[EdStem Smart Search] Could not find target container after max attempts');
+          }
         }
       }
     };
 
-    // Try to mount immediately
-    findAndMount();
-
     // Also observe DOM changes to handle dynamic search modal appearance
+    let mountRetryTimeout: ReturnType<typeof setTimeout> | null = null;
+    let immediateMountTimeout: ReturnType<typeof setTimeout> | null = null;
+    let delayedMountTimeout: ReturnType<typeof setTimeout> | null = null;
+
     const observer = new MutationObserver(() => {
       // Reset mounted flag if our root element was removed
       const rootElement = document.getElementById('edstem-smart-search');
       if (rootElement && !rootElement.parentElement) {
         mountedRef.current = false;
       }
+
       // Try to mount again if visible but not mounted
+      // Debounce the retry to avoid excessive attempts
       if (state.isVisible && !mountedRef.current) {
-        findAndMount();
+        if (mountRetryTimeout) {
+          clearTimeout(mountRetryTimeout);
+        }
+        mountRetryTimeout = setTimeout(() => {
+          findAndMount(0);
+        }, 100);
       }
     });
 
@@ -391,8 +484,31 @@ export default function App() {
       subtree: true,
     });
 
+    // Try to mount immediately, then retry if needed
+    // Use a small delay to ensure DOM is ready
+    immediateMountTimeout = setTimeout(() => {
+      findAndMount(0);
+    }, 50);
+
+    // Also try again after a longer delay in case modal takes time to appear
+    delayedMountTimeout = setTimeout(() => {
+      if (!mountedRef.current && state.isVisible) {
+        console.log('[EdStem Smart Search] Retrying mount after delay...');
+        findAndMount(0);
+      }
+    }, 500);
+
     return () => {
       observer.disconnect();
+      if (mountRetryTimeout) {
+        clearTimeout(mountRetryTimeout);
+      }
+      if (immediateMountTimeout) {
+        clearTimeout(immediateMountTimeout);
+      }
+      if (delayedMountTimeout) {
+        clearTimeout(delayedMountTimeout);
+      }
       // Don't remove the container on unmount - let it persist if search modal is still open
     };
   }, [state.isVisible]);
@@ -423,7 +539,16 @@ export default function App() {
     return null;
   }
 
-  console.log('[EdStem Smart Search] Rendering component with', state.results.length, 'results');
+  console.log('[EdStem Smart Search] Rendering component with', state.results.length, 'results', {
+    isVisible: state.isVisible,
+    isLoading: state.isLoading,
+    query: state.query,
+  });
+
+  // Ensure containerRef is set for mounting
+  if (!containerRef.current) {
+    console.warn('[EdStem Smart Search] containerRef not set, component may not mount correctly');
+  }
 
   return (
     <div
@@ -431,7 +556,8 @@ export default function App() {
       className="edstem-smart-search mb-4 rounded-xl border border-purple-500/30 bg-[#1a1a2e] p-4 shadow-lg"
       role="region"
       aria-label="Smart Search Results"
-      aria-live="polite">
+      aria-live="polite"
+      data-testid="edstem-smart-search-container">
       {/* Header */}
       <div className="mb-3 flex items-center gap-2">
         <span className="text-lg">✨</span>

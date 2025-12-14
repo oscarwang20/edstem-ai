@@ -253,7 +253,7 @@ async function performSemanticSearch(query: string, courseId: number) {
   try {
     // Use min_score of 0.75 as per PRD requirement (hide low-quality matches)
     const response = await fetch(
-      `${BACKEND_URL}/search?q=${encodeURIComponent(query)}&course_id=${courseId}&k=5&min_score=0.25`,
+      `${BACKEND_URL}/search?q=${encodeURIComponent(query)}&course_id=${courseId}&k=5&min_score=0.0`,
       {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
