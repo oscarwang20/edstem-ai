@@ -1,0 +1,265 @@
+{
+  "timestamp": "2025-12-14T13:35:56.042627",
+  "total_queries": 5,
+  "metrics": {
+    "avg_overlap_percentage": 36.0,
+    "total_overlap_count": 9,
+    "total_possible_overlap": 25,
+    "overlap_rate": 36.0,
+    "avg_position_diff": 0.020833333333333315,
+    "avg_vector_score": 0.4543119611947663,
+    "win_rate": 100.0,
+    "coverage": 100.0
+  },
+  "individual_results": [
+    {
+      "query": "Can someone explain transformers",
+      "overlap_percentage": 60.0,
+      "overlap_count": 3,
+      "avg_position_diff": 0.3333333333333333,
+      "avg_vector_score": 0.36992220904515905,
+      "vector_only_count": 2,
+      "native_only_count": 2,
+      "vector_results": [
+        [
+          6332379,
+          0.4605
+        ],
+        [
+          6436211,
+          0.4206
+        ],
+        [
+          6332365,
+          0.3684
+        ],
+        [
+          6432462,
+          0.3252
+        ],
+        [
+          6272505,
+          0.2749
+        ]
+      ],
+      "native_results": [
+        6436211,
+        6432462,
+        6332379,
+        6577439,
+        6431379
+      ],
+      "position_analysis": {
+        "6332379": {
+          "vector_position": 1,
+          "native_position": 3,
+          "vector_score": 0.4605,
+          "position_diff": -2
+        },
+        "6436211": {
+          "vector_position": 2,
+          "native_position": 1,
+          "vector_score": 0.4206,
+          "position_diff": 1
+        },
+        "6432462": {
+          "vector_position": 4,
+          "native_position": 2,
+          "vector_score": 0.3252,
+          "position_diff": 2
+        }
+      }
+    },
+    {
+      "query": "diffusion math",
+      "overlap_percentage": 20.0,
+      "overlap_count": 1,
+      "avg_position_diff": -1.0,
+      "avg_vector_score": 0.5232132611266216,
+      "vector_only_count": 4,
+      "native_only_count": 4,
+      "vector_results": [
+        [
+          6424127,
+          0.6336
+        ],
+        [
+          6433885,
+          0.6044
+        ],
+        [
+          6415083,
+          0.4959
+        ],
+        [
+          6413666,
+          0.4803
+        ],
+        [
+          6590532,
+          0.4019
+        ]
+      ],
+      "native_results": [
+        6436163,
+        6424127,
+        6428501,
+        6429171,
+        6405861
+      ],
+      "position_analysis": {
+        "6424127": {
+          "vector_position": 1,
+          "native_position": 2,
+          "vector_score": 0.6336,
+          "position_diff": -1
+        }
+      }
+    },
+    {
+      "query": "VAE encoder decoder",
+      "overlap_percentage": 20.0,
+      "overlap_count": 1,
+      "avg_position_diff": 1.0,
+      "avg_vector_score": 0.4689777658594746,
+      "vector_only_count": 4,
+      "native_only_count": 4,
+      "vector_results": [
+        [
+          6375696,
+          0.5078
+        ],
+        [
+          6529051,
+          0.4835
+        ],
+        [
+          6429171,
+          0.4606
+        ],
+        [
+          6436445,
+          0.4523
+        ],
+        [
+          6290858,
+          0.4408
+        ]
+      ],
+      "native_results": [
+        6602791,
+        6429171,
+        6277106,
+        6428501,
+        6436163
+      ],
+      "position_analysis": {
+        "6429171": {
+          "vector_position": 3,
+          "native_position": 2,
+          "vector_score": 0.4606,
+          "position_diff": 1
+        }
+      }
+    },
+    {
+      "query": "backpropagation",
+      "overlap_percentage": 0.0,
+      "overlap_count": 0,
+      "avg_position_diff": 0,
+      "avg_vector_score": 0.44874696694769634,
+      "vector_only_count": 5,
+      "native_only_count": 1,
+      "vector_results": [
+        [
+          6147748,
+          0.5235
+        ],
+        [
+          6391070,
+          0.4464
+        ],
+        [
+          6435668,
+          0.4302
+        ],
+        [
+          6433446,
+          0.4251
+        ],
+        [
+          6290858,
+          0.4185
+        ]
+      ],
+      "native_results": [
+        6421985
+      ],
+      "position_analysis": {}
+    },
+    {
+      "query": "attention mechanism",
+      "overlap_percentage": 80.0,
+      "overlap_count": 4,
+      "avg_position_diff": -0.25,
+      "avg_vector_score": 0.46069960299487966,
+      "vector_only_count": 1,
+      "native_only_count": 1,
+      "vector_results": [
+        [
+          6437410,
+          0.5082
+        ],
+        [
+          6278406,
+          0.4852
+        ],
+        [
+          6321901,
+          0.4764
+        ],
+        [
+          6278988,
+          0.4422
+        ],
+        [
+          6577439,
+          0.3915
+        ]
+      ],
+      "native_results": [
+        6577439,
+        6321901,
+        6427641,
+        6278406,
+        6437410
+      ],
+      "position_analysis": {
+        "6437410": {
+          "vector_position": 1,
+          "native_position": 5,
+          "vector_score": 0.5082,
+          "position_diff": -4
+        },
+        "6278406": {
+          "vector_position": 2,
+          "native_position": 4,
+          "vector_score": 0.4852,
+          "position_diff": -2
+        },
+        "6321901": {
+          "vector_position": 3,
+          "native_position": 2,
+          "vector_score": 0.4764,
+          "position_diff": 1
+        },
+        "6577439": {
+          "vector_position": 5,
+          "native_position": 1,
+          "vector_score": 0.3915,
+          "position_diff": 4
+        }
+      }
+    }
+  ]
+}

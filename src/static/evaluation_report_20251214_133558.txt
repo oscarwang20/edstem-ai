@@ -1,0 +1,25 @@
+======================================================================
+VECTOR SEARCH vs NATIVE SEARCH - EVALUATION REPORT
+======================================================================
+
+Generated: 2025-12-14 13:35:58
+
+Total Queries Evaluated: 5
+
+----------------------------------------------------------------------
+
+📊 KEY METRICS:
+  • Average Overlap: 36.0%
+  • Overall Overlap Rate: 36.0%
+  • Average Position Difference: 0.02
+  • Win Rate (unique vector results): 100.0%
+  • Average Vector Score: 0.4543
+
+----------------------------------------------------------------------
+
+📈 INTERPRETATION:
+  ⚠ Native search tends to rank relevant results higher than vector search
+  ✓ Vector search finds unique results in 100.0% of queries
+  ⚠ Low overlap (36.0%) suggests different coverage
+
+======================================================================
