@@ -8,7 +8,7 @@ const rootDir = resolve(import.meta.dirname);
 const srcDir = resolve(rootDir, 'src');
 const matchesDir = resolve(srcDir, 'matches');
 
-const configs = Object.entries(getContentScriptEntries(matchesDir)).map(([name, entry]) =>
+const configs = Object.entries(getContentScriptEntries(matchesDir)).map(([name, entry], index) =>
   withPageConfig({
     mode: IS_DEV ? 'development' : undefined,
     resolve: {
@@ -26,14 +26,16 @@ const configs = Object.entries(getContentScriptEntries(matchesDir)).map(([name, 
         fileName: name,
       },
       outDir: resolve(rootDir, '..', '..', 'dist', 'content'),
+      // Only empty the directory for the first build since we're building sequentially
+      emptyOutDir: index === 0,
     },
   }),
 );
 
-const builds = configs.map(async config => {
+// Build sequentially to avoid race conditions when multiple builds
+// write to the same output directory with emptyOutDir enabled
+for (const config of configs) {
   //@ts-expect-error This is hidden property into vite's resolveConfig()
   config.configFile = false;
   await build(config);
-});
-
-await Promise.all(builds);
+}

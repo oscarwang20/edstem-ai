@@ -129,13 +129,13 @@ export default function Popup() {
 
   // Handle sync button click
   const handleSync = async () => {
-    if (!state?.courseId || !state?.authToken) return;
+    if (!state?.courseId) return;
 
     try {
       const response = await chrome.runtime.sendMessage({
         type: MESSAGE_TYPES.SYNC_COURSE,
         courseId: state.courseId,
-        userToken: state.authToken,
+        userToken: state.authToken || null,
       });
 
       if (response.success) {
@@ -232,14 +232,14 @@ export default function Popup() {
       {/* Sync Button */}
       <SyncButton
         onClick={handleSync}
-        isDisabled={!state?.backendConnected || !state?.courseId || !state?.authToken}
+        isDisabled={!state?.backendConnected || !state?.courseId}
         syncStatus={syncStatus}
       />
 
       {/* Help Text */}
       {!state?.authToken && state?.courseId && (
-        <p className="mt-3 text-center text-xs text-yellow-400">
-          Tip: Use the search bar on EdStem to capture your auth token
+        <p className="mt-3 text-center text-xs text-gray-400">
+          Using backend API key for syncing (user token not required)
         </p>
       )}
 

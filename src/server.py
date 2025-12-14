@@ -51,7 +51,7 @@ app.add_middleware(
 
 class SyncRequest(BaseModel):
     course_id: int
-    user_token: str
+    user_token: Optional[str] = None
 
 
 class SyncStatus(BaseModel):
@@ -73,15 +73,24 @@ def get_namespace(course_id: int) -> str:
     return f"course_{course_id}"
 
 
-def fetch_all_threads(course_id: int, user_token: str, limit: int = 1000):
+def fetch_all_threads(course_id: int, user_token: Optional[str] = None, limit: int = 1000):
     """
-    Fetch all threads for a course using the user's auth token.
-    This respects the user's access permissions.
+    Fetch all threads for a course using either the user's auth token or ED_API_KEY.
+    If user_token is provided, it respects the user's access permissions.
+    Otherwise, falls back to ED_API_KEY if available.
     """
     host = "https://us.edstem.org"
     threads = []
     per_page = 50
     offset = 0
+
+    # Use user_token if provided, otherwise fall back to ED_API_KEY
+    auth_token = user_token or ED_API_KEY
+    if not auth_token:
+        raise HTTPException(
+            status_code=400,
+            detail="Either user_token must be provided or ED_API_KEY must be set in environment"
+        )
 
     while len(threads) < limit:
         url = f"{host}/api/courses/{course_id}/threads"
@@ -89,7 +98,7 @@ def fetch_all_threads(course_id: int, user_token: str, limit: int = 1000):
 
         res = requests.get(
             url=url,
-            headers={"Authorization": f"Bearer {user_token}"},
+            headers={"Authorization": f"Bearer {auth_token}"},
             params=params,
             timeout=15,
         )
@@ -143,7 +152,8 @@ def prepare_records_for_pinecone(threads: list) -> list:
 
         records.append({
             "_id": f"thread_{thread_id}",
-            "content": full_content,
+            "text": full_content,  # Pinecone index expects 'text' field (field_map text=content)
+            "content": full_content,  # Keep for backward compatibility in search results
             "thread_id": thread_id,
             "thread_number": number,
             "title": title,
@@ -153,11 +163,12 @@ def prepare_records_for_pinecone(threads: list) -> list:
     return records
 
 
-async def sync_course_task(course_id: int, user_token: str):
+async def sync_course_task(course_id: int, user_token: Optional[str]):
     """Background task to sync a course to Pinecone."""
     namespace = get_namespace(course_id)
 
     try:
+        print(f"[Sync Task] Starting sync for course {course_id}, using {'user_token' if user_token else 'ED_API_KEY'}")
         sync_status[course_id] = {
             "status": "fetching",
             "message": "Fetching threads from EdStem..."
@@ -165,6 +176,7 @@ async def sync_course_task(course_id: int, user_token: str):
 
         # Fetch all threads
         threads = fetch_all_threads(course_id, user_token)
+        print(f"[Sync Task] Fetched {len(threads)} threads for course {course_id}")
 
         if not threads:
             sync_status[course_id] = {
@@ -234,8 +246,10 @@ def health_check():
 async def sync_course(request: SyncRequest, background_tasks: BackgroundTasks):
     """
     Trigger indexing of a course's threads to Pinecone.
-    Uses the user's token to fetch threads (respecting their permissions).
+    Uses the user's token if provided, otherwise falls back to ED_API_KEY.
     """
+    print(f"[Sync] Received sync request for course_id={request.course_id}, has_user_token={request.user_token is not None}, has_ed_api_key={ED_API_KEY is not None}")
+    
     if index is None:
         raise HTTPException(
             status_code=503,
@@ -245,11 +259,13 @@ async def sync_course(request: SyncRequest, background_tasks: BackgroundTasks):
     # Check if already syncing
     current_status = sync_status.get(request.course_id, {})
     if current_status.get("status") in ["fetching", "processing", "indexing"]:
+        print(f"[Sync] Course {request.course_id} already syncing, returning current status")
         return {
             "message": "Sync already in progress",
             "status": current_status
         }
 
+    print(f"[Sync] Starting background sync task for course {request.course_id}")
     # Start background sync
     background_tasks.add_task(sync_course_task, request.course_id, request.user_token)
 
@@ -311,7 +327,7 @@ def search_endpoint(
             rerank={
                 "model": "bge-reranker-v2-m3",
                 "top_n": k,
-                "rank_fields": ["content"]
+                "rank_fields": ["text"]  # Use 'text' field for reranking (matches field_map)
             }
         )
 

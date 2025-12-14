@@ -11,7 +11,10 @@ import 'webextension-polyfill';
  */
 
 const BACKEND_URL = 'http://localhost:8000';
-const EDSTEM_SEARCH_PATTERN = /https:\/\/(?:us\.)?edstem\.org\/api\/courses\/(\d+)\/search/;
+// Updated pattern to match both /search and /threads/search endpoints
+const EDSTEM_SEARCH_PATTERN = /https:\/\/(?:us\.)?edstem\.org\/api\/courses\/(\d+)\/(?:threads\/)?search/;
+const EDSTEM_API_PATTERN = /https:\/\/(?:us\.)?edstem\.org\/api\/courses\/(\d+)/;
+const SEARCH_DEBOUNCE_MS = 300; // Wait 300ms after user stops typing before searching
 
 // Storage keys
 const STORAGE_KEYS = {
@@ -20,6 +23,9 @@ const STORAGE_KEYS = {
   BACKEND_STATUS: 'backend_status',
   SYNC_STATUS: 'sync_status',
 };
+
+// Debounce timer for search requests
+let searchDebounceTimer: ReturnType<typeof setTimeout> | null = null;
 
 // Message types for communication
 export const MESSAGE_TYPES = {
@@ -30,6 +36,8 @@ export const MESSAGE_TYPES = {
   CHECK_BACKEND: 'CHECK_BACKEND',
   GET_STATE: 'GET_STATE',
   SMART_SEARCH_RESULTS: 'SMART_SEARCH_RESULTS',
+  EXTRACT_COURSE_ID: 'EXTRACT_COURSE_ID',
+  SET_COURSE_ID: 'SET_COURSE_ID',
 };
 
 interface SearchMessage {
@@ -41,14 +49,19 @@ interface SearchMessage {
 interface SyncMessage {
   type: typeof MESSAGE_TYPES.SYNC_COURSE;
   courseId: number;
-  userToken: string;
+  userToken: string | null;
 }
 
 interface GetStateMessage {
   type: typeof MESSAGE_TYPES.GET_STATE;
 }
 
-type Message = SearchMessage | SyncMessage | GetStateMessage | { type: string };
+interface SetCourseIdMessage {
+  type: typeof MESSAGE_TYPES.SET_COURSE_ID;
+  courseId: number;
+}
+
+type Message = SearchMessage | SyncMessage | GetStateMessage | SetCourseIdMessage | { type: string };
 
 // Initialize extension state
 async function initializeState() {
@@ -63,6 +76,13 @@ async function initializeState() {
     courseId: result[STORAGE_KEYS.COURSE_ID],
     backendStatus: result[STORAGE_KEYS.BACKEND_STATUS],
   });
+
+  // Verify webRequest API is available
+  if (chrome.webRequest && chrome.webRequest.onBeforeSendHeaders) {
+    console.log('[EdStem Smart Search] webRequest API is available');
+  } else {
+    console.error('[EdStem Smart Search] webRequest API is NOT available! Check manifest permissions.');
+  }
 
   // Check backend health on startup
   checkBackendHealth();
@@ -88,61 +108,157 @@ async function checkBackendHealth(): Promise<boolean> {
   }
 }
 
-// Listen for web requests to capture auth tokens
+// Listen for web requests to capture auth tokens from any EdStem API call
+console.log('[EdStem Smart Search] Registering webRequest listener for:', 'https://*.edstem.org/api/*');
+
 chrome.webRequest.onBeforeSendHeaders.addListener(
   details => {
-    const match = details.url.match(EDSTEM_SEARCH_PATTERN);
+    // Log all EdStem API requests for debugging
+    if (details.url.includes('edstem.org/api')) {
+      console.log('[EdStem Smart Search] Intercepted API request:', details.url);
 
-    if (match) {
-      const courseId = parseInt(match[1], 10);
+      // Debug: Log all available headers (first request only to avoid spam)
+      if (details.url.includes('/search') && details.requestHeaders) {
+        console.log(
+          '[EdStem Smart Search] Available headers:',
+          details.requestHeaders.map(h => h.name),
+        );
+      }
+    }
 
-      // Extract auth token from headers
-      const authHeader = details.requestHeaders?.find(h => h.name.toLowerCase() === 'authorization');
+    // Try to extract course ID from URL first
+    const apiMatch = details.url.match(EDSTEM_API_PATTERN);
+    const searchMatch = details.url.match(EDSTEM_SEARCH_PATTERN);
 
-      if (authHeader?.value) {
-        const token = authHeader.value.replace('Bearer ', '');
+    // Extract auth token from headers (if present) - but don't require it for search
+    // EdStem uses X-Token header (not Authorization)
+    // Try multiple header name variations
+    const authHeader = details.requestHeaders?.find(
+      h =>
+        h.name.toLowerCase() === 'x-token' || // EdStem uses this
+        h.name.toLowerCase() === 'authorization' ||
+        h.name.toLowerCase() === 'x-authorization' ||
+        h.name.toLowerCase() === 'authorization-token',
+    );
 
-        // Store the token and course ID
+    // Extract token - EdStem uses X-Token header directly (no "Bearer " prefix)
+    const token = authHeader?.value ? authHeader.value.replace(/^Bearer\s+/, '') : null;
+
+    // If we have a token, store it (for syncing purposes)
+    if (token && apiMatch) {
+      const courseId = parseInt(apiMatch[1], 10);
+      chrome.storage.local.set({
+        [STORAGE_KEYS.AUTH_TOKEN]: token,
+        [STORAGE_KEYS.COURSE_ID]: courseId,
+      });
+      console.log('[EdStem Smart Search] Captured auth token for course:', courseId);
+    }
+
+    // Handle search requests - proceed even without auth token (backend uses ED_API_KEY)
+    if (searchMatch) {
+      const courseId = parseInt(searchMatch[1], 10);
+
+      if (!courseId) {
+        console.warn('[EdStem Smart Search] Could not extract course ID from URL:', details.url);
+        return;
+      }
+
+      // Store course ID even if we don't have a token
+      if (!token) {
         chrome.storage.local.set({
-          [STORAGE_KEYS.AUTH_TOKEN]: token,
           [STORAGE_KEYS.COURSE_ID]: courseId,
         });
+        console.log('[EdStem Smart Search] No auth token, but proceeding with search for course:', courseId);
+      }
 
-        console.log('[EdStem Smart Search] Captured auth token for course:', courseId);
+      // Extract query from URL
+      const url = new URL(details.url);
+      // Try both 'q' and 'query' parameters (EdStem might use either)
+      const query = url.searchParams.get('q') || url.searchParams.get('query');
 
-        // Extract query from URL
-        const url = new URL(details.url);
-        const query = url.searchParams.get('q');
+      console.log('[EdStem Smart Search] Search request detected:', { query, courseId, url: details.url });
 
-        if (query && query.trim()) {
-          // Notify content script about the search query
-          chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
-            if (tabs[0]?.id) {
-              chrome.tabs.sendMessage(tabs[0].id, {
+      if (query && query.trim()) {
+        // Clear any existing debounce timer
+        if (searchDebounceTimer) {
+          clearTimeout(searchDebounceTimer);
+          searchDebounceTimer = null;
+        }
+
+        // Immediately show loading state in content script
+        chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+          if (tabs[0]?.id) {
+            chrome.tabs
+              .sendMessage(tabs[0].id, {
                 type: MESSAGE_TYPES.SEARCH_QUERY,
                 query: query,
                 courseId: courseId,
+              })
+              .catch(err => {
+                console.warn('[EdStem Smart Search] Failed to send SEARCH_QUERY message:', err);
               });
-            }
-          });
+          }
+        });
 
-          // Perform semantic search
+        // Debounce the actual search request (wait 300ms after user stops typing)
+        searchDebounceTimer = setTimeout(() => {
           performSemanticSearch(query, courseId);
+          searchDebounceTimer = null;
+        }, SEARCH_DEBOUNCE_MS);
+      } else {
+        // Empty query - clear any pending search and hide results
+        if (searchDebounceTimer) {
+          clearTimeout(searchDebounceTimer);
+          searchDebounceTimer = null;
         }
+        // Notify content script to hide results
+        chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
+          if (tabs[0]?.id) {
+            chrome.tabs.sendMessage(tabs[0].id, {
+              type: MESSAGE_TYPES.SEARCH_QUERY,
+              query: '',
+              courseId: courseId,
+            });
+          }
+        });
       }
+    } else if (apiMatch && token) {
+      // Not a search request, but we have a token - store it
+      const courseId = parseInt(apiMatch[1], 10);
+      chrome.storage.local.set({
+        [STORAGE_KEYS.AUTH_TOKEN]: token,
+        [STORAGE_KEYS.COURSE_ID]: courseId,
+      });
+      console.log('[EdStem Smart Search] Captured auth token for course:', courseId);
+    } else if (token) {
+      // No course ID in URL, but we can still store the token
+      // (it might be a general API call)
+      chrome.storage.local.set({
+        [STORAGE_KEYS.AUTH_TOKEN]: token,
+      });
+      console.log('[EdStem Smart Search] Captured auth token (no course ID in URL)');
     }
   },
-  { urls: ['https://*.edstem.org/api/courses/*/search*'] },
-  ['requestHeaders']
+  { urls: ['https://*.edstem.org/api/*'] },
+  ['requestHeaders'],
 );
 
 // Perform semantic search and send results to content script
 async function performSemanticSearch(query: string, courseId: number) {
+  // Skip if query is empty after debounce
+  if (!query || !query.trim()) {
+    return;
+  }
+
   try {
-    const response = await fetch(`${BACKEND_URL}/search?q=${encodeURIComponent(query)}&course_id=${courseId}&k=3`, {
-      method: 'GET',
-      headers: { 'Content-Type': 'application/json' },
-    });
+    // Use min_score of 0.75 as per PRD requirement (hide low-quality matches)
+    const response = await fetch(
+      `${BACKEND_URL}/search?q=${encodeURIComponent(query)}&course_id=${courseId}&k=5&min_score=0.25`,
+      {
+        method: 'GET',
+        headers: { 'Content-Type': 'application/json' },
+      },
+    );
 
     if (!response.ok) {
       throw new Error(`Backend returned ${response.status}`);
@@ -150,20 +266,79 @@ async function performSemanticSearch(query: string, courseId: number) {
 
     const data = await response.json();
 
+    console.log('[EdStem Smart Search] Backend response:', {
+      resultCount: data.results?.length || 0,
+      hasMessage: !!data.message,
+      fullData: data,
+    });
+
     // Send results to content script
+    // Use sendMessage with error handling and retry logic
+    const sendToContentScript = async (tabId: number, retries = 3) => {
+      const message = {
+        type: MESSAGE_TYPES.SMART_SEARCH_RESULTS,
+        results: data.results || [],
+        query: query,
+        courseId: courseId,
+        message: data.message,
+      };
+
+      console.log('[EdStem Smart Search] Sending message to content script:', {
+        type: message.type,
+        resultCount: message.results.length,
+        tabId: tabId,
+        retriesLeft: retries,
+      });
+
+      try {
+        await chrome.tabs.sendMessage(tabId, message);
+        console.log('[EdStem Smart Search] Message sent successfully to content script');
+      } catch (err) {
+        if (retries > 0) {
+          console.warn(`[EdStem Smart Search] Failed to send message, retrying... (${retries} retries left)`);
+          // Wait a bit and retry (content script might still be loading)
+          setTimeout(() => sendToContentScript(tabId, retries - 1), 500);
+        } else {
+          console.error('[EdStem Smart Search] Failed to send message to content script after retries:', err);
+        }
+      }
+    };
+
     chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
       if (tabs[0]?.id) {
-        chrome.tabs.sendMessage(tabs[0].id, {
-          type: MESSAGE_TYPES.SMART_SEARCH_RESULTS,
-          results: data.results || [],
-          query: query,
-          courseId: courseId,
-          message: data.message,
-        });
+        sendToContentScript(tabs[0].id);
+      } else {
+        console.warn('[EdStem Smart Search] No active tab found to send message to');
       }
     });
   } catch (error) {
     console.error('[EdStem Smart Search] Semantic search failed:', error);
+
+    // Determine error type for better user feedback
+    let errorMessage = 'Unknown error';
+    let errorType = 'unknown';
+
+    if (error instanceof Error) {
+      errorMessage = error.message;
+
+      // Check for specific error types
+      if (error.message.includes('503') || error.message.includes('not available')) {
+        errorType = 'backend_unavailable';
+        errorMessage = 'Backend service unavailable. Please check if the server is running.';
+      } else if (error.message.includes('not indexed') || error.message.includes('namespace')) {
+        errorType = 'not_indexed';
+        errorMessage = 'Course not indexed yet. Click the extension icon to sync this course.';
+      } else if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+        errorType = 'network_error';
+        errorMessage = 'Network error. Please check your connection.';
+      } else if (error.message.includes('400')) {
+        errorType = 'bad_request';
+        errorMessage = 'Invalid search request.';
+      } else {
+        errorType = 'unknown';
+        errorMessage = error.message;
+      }
+    }
 
     // Send error to content script
     chrome.tabs.query({ active: true, currentWindow: true }, tabs => {
@@ -173,7 +348,8 @@ async function performSemanticSearch(query: string, courseId: number) {
           results: [],
           query: query,
           courseId: courseId,
-          error: error instanceof Error ? error.message : 'Unknown error',
+          error: errorMessage,
+          errorType: errorType,
         });
       }
     });
@@ -181,16 +357,30 @@ async function performSemanticSearch(query: string, courseId: number) {
 }
 
 // Sync course to Pinecone
-async function syncCourse(courseId: number, userToken: string): Promise<{ success: boolean; message: string }> {
+async function syncCourse(courseId: number, userToken: string | null): Promise<{ success: boolean; message: string }> {
   try {
+    const requestBody: { course_id: number; user_token?: string } = {
+      course_id: courseId,
+    };
+
+    // Only include user_token if we have it (backend will use ED_API_KEY as fallback)
+    if (userToken) {
+      requestBody.user_token = userToken;
+    }
+
+    console.log('[EdStem Smart Search] Sending sync request:', {
+      courseId,
+      hasUserToken: !!userToken,
+      backendUrl: BACKEND_URL,
+    });
+
     const response = await fetch(`${BACKEND_URL}/sync_course`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        course_id: courseId,
-        user_token: userToken,
-      }),
+      body: JSON.stringify(requestBody),
     });
+
+    console.log('[EdStem Smart Search] Sync response status:', response.status);
 
     if (!response.ok) {
       throw new Error(`Sync request failed: ${response.status}`);
@@ -242,6 +432,41 @@ async function getIndexStats(courseId: number) {
   }
 }
 
+// Extract course ID from URL
+function extractCourseIdFromUrl(url: string): number | null {
+  // Match patterns like:
+  // - /courses/12345/discussion
+  // - /us/courses/12345/discussion
+  // - /api/courses/12345/search
+  const match = url.match(/\/courses\/(\d+)/);
+  return match ? parseInt(match[1], 10) : null;
+}
+
+// Extract and store course ID from current tab URL
+async function extractCourseIdFromCurrentTab(): Promise<number | null> {
+  try {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tabs[0]?.url) {
+      return null;
+    }
+
+    const courseId = extractCourseIdFromUrl(tabs[0].url);
+    if (courseId) {
+      // Store the course ID
+      await chrome.storage.local.set({
+        [STORAGE_KEYS.COURSE_ID]: courseId,
+      });
+      console.log('[EdStem Smart Search] Extracted course ID from URL:', courseId);
+      return courseId;
+    }
+
+    return null;
+  } catch (error) {
+    console.error('[EdStem Smart Search] Failed to extract course ID from tab:', error);
+    return null;
+  }
+}
+
 // Handle messages from popup and content scripts
 chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) => {
   console.log('[EdStem Smart Search] Received message:', message.type);
@@ -255,7 +480,12 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
 
     case MESSAGE_TYPES.SYNC_COURSE:
       const syncMsg = message as SyncMessage;
+      console.log('[EdStem Smart Search] Received SYNC_COURSE message:', {
+        courseId: syncMsg.courseId,
+        hasUserToken: !!syncMsg.userToken,
+      });
       syncCourse(syncMsg.courseId, syncMsg.userToken).then(result => {
+        console.log('[EdStem Smart Search] Sync result:', result);
         sendResponse(result);
       });
       return true;
@@ -272,9 +502,14 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
         chrome.storage.local.get([STORAGE_KEYS.AUTH_TOKEN, STORAGE_KEYS.COURSE_ID, STORAGE_KEYS.BACKEND_STATUS]),
         checkBackendHealth(),
       ]).then(async ([storage, backendConnected]) => {
-        const courseId = storage[STORAGE_KEYS.COURSE_ID];
-        let indexStats = null;
+        let courseId = storage[STORAGE_KEYS.COURSE_ID];
 
+        // If no course ID in storage, try to extract from current tab URL
+        if (!courseId) {
+          courseId = await extractCourseIdFromCurrentTab();
+        }
+
+        let indexStats = null;
         if (courseId && backendConnected) {
           indexStats = await getIndexStats(courseId);
         }
@@ -286,6 +521,21 @@ chrome.runtime.onMessage.addListener((message: Message, _sender, sendResponse) =
           indexStats: indexStats,
         });
       });
+      return true;
+
+    case MESSAGE_TYPES.EXTRACT_COURSE_ID:
+      extractCourseIdFromCurrentTab().then(courseId => {
+        sendResponse({ courseId });
+      });
+      return true;
+
+    case MESSAGE_TYPES.SET_COURSE_ID:
+      const setCourseMsg = message as SetCourseIdMessage;
+      chrome.storage.local.set({
+        [STORAGE_KEYS.COURSE_ID]: setCourseMsg.courseId,
+      });
+      console.log('[EdStem Smart Search] Course ID set from content script:', setCourseMsg.courseId);
+      sendResponse({ success: true });
       return true;
 
     default:
@@ -300,3 +550,6 @@ setInterval(checkBackendHealth, 30000); // Every 30 seconds
 initializeState();
 
 console.log('[EdStem Smart Search] Background service worker initialized');
+console.log('[EdStem Smart Search] Listening for EdStem API requests...');
+console.log('[EdStem Smart Search] Search pattern:', EDSTEM_SEARCH_PATTERN);
+console.log('[EdStem Smart Search] API pattern:', EDSTEM_API_PATTERN);
